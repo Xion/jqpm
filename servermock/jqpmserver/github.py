@@ -38,6 +38,25 @@ def list_files(user, repo, ref='master'):
     )
 
 
+def get_commits(user, repo, from_ref=None, path=None):
+    """Gets list of commits from ``repo`` belonging to given ``user``,
+    optionally filtering by ``path`` and/or starting from given ``ref``.
+    Returns a list of dictionaries.
+    """
+    args = {}
+    if from_ref is not None:
+        args['sha'] = from_ref
+    if path is not None:
+        args['path'] = path
+
+    url = "%s/repos/%s/%s/commits" % (GITHUB_URL, user, repo)
+    if args:
+        url += "?%s" % urlencode(args)
+    response = requests.get(url)
+
+    return json.loads(response.content)
+
+
 def retrieve_file(user, repo, path, ref='master'):
     """Retrieves contents of file under ``path`` from a ``repo``
     that belongs to given ``user``.

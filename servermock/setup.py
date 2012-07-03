@@ -23,6 +23,7 @@ setup(
     install_requires=[
         'Flask',
         'requests',
+        'python-dateutil',
     ],
 
     packages=find_packages(),
