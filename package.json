@@ -1,0 +1,31 @@
+{
+	"name": "jqpm",
+	"version": "0.0.1",
+	"author": "Karol Kuczmarski <karol.kuczmarski@gmail.com>",
+	"description": "Package manager for jQuery plugins",
+	"keywords": [
+		"jQuery",
+		"plugins",
+		"packages",
+		"package manager",
+		"cli"
+	],
+	"license": "BSD",
+
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Xion/jqpm.git"
+	},
+
+	"bin": {
+		"jqpm": "./bin/jqpm"
+	},
+
+	"dependencies": [
+		"argparse"
+	],
+	"engine": {
+		"node": ">=0.6"
+	},
+	"preferGlobal": true
+}

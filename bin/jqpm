@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+'use strict';
+
+/**
+ * jqpm -- jQuery Package Manager
+ * http://github.com/Xion/jqpm
+ */
+
+
+var util = require('util')
+  , fs = require('fs')
+  , path = require('path')
+
+  , argparse = require('argparse')
+  ;
+
+
+
+
+
+/**
+ * Main function.
+ * :param argv: Command line arguments, as parsed by argparse
+ */
+function main(args) {
+
+}
+
+/**
+ * Creates the ArgumentParser object to parse command line args.
+ */
+function argumentParser() {
+	var parser = new argparse.ArgumentParser({
+		prog: "jqpm",
+		description: "jQuery Package Manager",
+	});
+	var subparsers = parser.addSubparsers({dest: "command"});
+
+	var installParser = subparsers.addParser('install', {addHelp: true});
+	installParser.addArgument('package', {
+		action: 'store',
+		help: "Package(s) to install"
+	});
+
+	return parser;
+}
+
+var args = argumentParser().parseArgs();
+main(args);
