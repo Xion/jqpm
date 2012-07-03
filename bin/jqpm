@@ -52,6 +52,34 @@ function installPackages(packages) {
 	});
 }
 
+/**
+ * Uninstalls given list of packages.
+ * :param packages: List of packages to uninstall
+ */
+function uninstallPackages(packages) {
+	var dataDir = getDataDirectory();
+
+	packages.forEach(function(name) {
+		var infoFilePath = path.join(dataDir, name + ".json");
+		if (fs.existsSync(infoFilePath)) {
+			var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
+			var jsFilePath = path.join(process.cwd(), jsFileName);
+			if (fs.existsSync(jsFilePath)) {
+				fs.unlinkSync(jsFilePath);
+				fs.unlinkSync(infoFilePath);
+				log('info', "%s uninstalled", name);
+			} else {
+				log('warn', "%s not found -- removing from installed plugins",
+							jsFileName);
+				fs.unlinkSync(infoFilePath);
+			}
+
+		} else {
+			log('warn', "%s not installed -- skipping", name);
+		}
+	});
+}
+
 
 /* Utility functions */
 
@@ -116,8 +144,12 @@ function base64Decode(data) {
  */
 function main(args) {
 	try {
-		if (args.command === 'install')
-			return installPackages(args.package);
+		switch(args.command) {
+			case 'install':
+				return installPackages(args.package);
+			case 'uninstall':
+				return uninstallPackages(args.package);
+		}
 	} catch (e) {
 		log('error', e.message);
 	}
@@ -138,6 +170,12 @@ function argumentParser() {
 	installParser.addArgument(['package'], {
 		action: 'append',
 		help: "Package(s) to install"
+	});
+
+	var uninstallParser = subparsers.addParser('uninstall', {addHelp: true});
+	uninstallParser.addArgument(['package'], {
+		action: 'append',
+		help: "Package(s) to uninstall"
 	});
 
 	return parser;
