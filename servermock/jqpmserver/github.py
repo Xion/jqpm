@@ -26,14 +26,16 @@ def search_repos(query):
 def list_files(user, repo, ref='master'):
     """Lists all files in root directory of ``repo`` belonging
     to given ``user``.
-    Returns a list of file and directory names.
+    Returns a dictionary mapping file and directory names to URLs.
     """
     url = "%s/repos/%s/%s/git/trees/%s" % (GITHUB_URL, user, repo, ref)
     response = requests.get(url)
 
     tree_info = json.loads(response.content)
-    return ["%s%s" % (t['path'], "/" if t['type'] == 'tree' else '')
-            for t in tree_info['tree']]
+    return dict(
+        ("%s%s" % (t['path'], "/" if t['type'] == 'tree' else ''), t['url'])
+        for t in tree_info['tree']
+    )
 
 
 def retrieve_file(user, repo, path, ref='master'):
