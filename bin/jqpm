@@ -34,7 +34,7 @@ function installPackages(packages) {
 	packages.forEach(function(name) {
 		downloadPackageInfo(name, function(err, info) {
 			if (err) {
-				console.error("Could not fetch package %s: %s", name, err);
+				log('error', "could not fetch package %s: %s", name, err);
 			} else {
 				// write plugin file content
 				var jsFile = base64Decode(info.file);
@@ -45,6 +45,8 @@ function installPackages(packages) {
 				// save package information in data directory
 				var infoFilePath = path.join(dataDir, name + ".json");
 				fs.writeFileSync(infoFilePath, JSON.stringify(info));
+
+				log('info', "%s installed", name);
 			}
 		});
 	});
@@ -52,6 +54,12 @@ function installPackages(packages) {
 
 
 /* Utility functions */
+
+function log(what, msg) {
+	var args = [].slice.call(arguments, 2);
+	args.unshift("[jqpm] " + msg);
+	return console[what].apply(null, args);
+}
 
 function getDataDirectory() {
 	var dataDir = path.join(process.cwd(), DATA_DIR);
@@ -73,16 +81,20 @@ function getDataDirectory() {
 function downloadPackageInfo(packageName, callback) {
 	var url = packageUrl(packageName);
 	var req = http.get(url, function(resp) {
-		resp.setEncoding('utf8');
+		if (resp.statusCode >= 200 && resp.statusCode < 300) {
+			resp.setEncoding('utf8');
 
-		var respBody = "";
-		resp.on('data', function(chunk) {
-			respBody += chunk;
-		});
-		resp.on('end', function() {
-			var packageInfo = JSON.parse(respBody);
-			callback(null, packageInfo);
-		});
+			var respBody = "";
+			resp.on('data', function(chunk) {
+				respBody += chunk;
+			});
+			resp.on('end', function() {
+				var packageInfo = JSON.parse(respBody);
+				callback(null, packageInfo);
+			});
+		} else {
+			callback(new Error(util.format("Got HTTP %s", resp.statusCode)));
+		}
 	});
 	req.on('error', callback);
 }
@@ -107,7 +119,7 @@ function main(args) {
 		if (args.command === 'install')
 			return installPackages(args.package);
 	} catch (e) {
-		console.error(e.message);
+		log('error', e.message);
 	}
 }
 
