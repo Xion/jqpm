@@ -10,20 +10,83 @@
 var util = require('util')
   , fs = require('fs')
   , path = require('path')
-
-  , argparse = require('argparse')
+  , querystring = require('querystring')
+  , http = require('http')
+  ;
+var argparse = require('argparse')
   ;
 
 
+var REPOSITORY_URL = "http://localhost:5000"; // using server mock
+var DATA_DIR = ".jqpm";
 
 
+/* jqpm commands */
+
+/**
+ * Install given list of packages.
+ * :param packages: List of package names to install
+ */
+function installPackages(packages) {
+	packages.forEach(function(name) {
+		downloadPackageInfo(name, function(err, info) {
+			console.log(info);
+		});
+	});
+}
+
+
+/* Utility functions */
+
+function ensureDataDirectoryExists() {
+	var dataDir = path.join(process.cwd(), DATA_DIR);
+	var exists = path.existsSync(dataDir);
+	if (exists) {
+		var isDir = fs.statSync(dataDir).isDirectory();
+		if (!isDir) {
+			throw new Error(util.format(
+				"'%s' found to not be directory -- aborting.", DATA_DIR));
+		}
+	} else {
+		fs.mkdirSync(dataDir);
+	}
+}
+
+function downloadPackageInfo(packageName, callback) {
+	var url = packageUrl(packageName);
+	var req = http.get(url, function(resp) {
+		resp.setEncoding('utf8');
+
+		var respBody = "";
+		resp.on('data', function(chunk) {
+			respBody += chunk;
+		});
+		resp.on('end', function() {
+			var packageInfo = JSON.parse(respBody);
+			callback(null, packageInfo);
+		});
+	});
+	req.on('error', callback);
+}
+
+function packageUrl(packageName) {
+	return util.format("%s/%s", REPOSITORY_URL, querystring.escape(packageName));
+}
+
+
+/* main(), command line arguments handling etc. */
 
 /**
  * Main function.
- * :param argv: Command line arguments, as parsed by argparse
+ * :param args: Command line arguments, as parsed by argparse
  */
 function main(args) {
-
+	try {
+		if (args.command === 'install')
+			return installPackages(args.package);
+	} catch (e) {
+		console.error(e.message);
+	}
 }
 
 /**
@@ -33,12 +96,13 @@ function argumentParser() {
 	var parser = new argparse.ArgumentParser({
 		prog: "jqpm",
 		description: "jQuery Package Manager",
+		usage: "jqpm COMMAND [OPTIONS]",
 	});
 	var subparsers = parser.addSubparsers({dest: "command"});
 
 	var installParser = subparsers.addParser('install', {addHelp: true});
-	installParser.addArgument('package', {
-		action: 'store',
+	installParser.addArgument(['package'], {
+		action: 'append',
 		help: "Package(s) to install"
 	});
 
