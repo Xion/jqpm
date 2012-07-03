@@ -6,13 +6,14 @@ import sys
 import json
 import os
 
-from flask import Flask, abort, make_response
+from flask import Flask, abort, Response
 from dateutil.parser import parse as parse_date
 
 from jqpmserver import github
 
 
 app = Flask(__name__)
+log = app.logger
 
 
 @app.route('/<name>', methods=['GET'])
@@ -29,7 +30,8 @@ def plugin(name):
     """
     repos = github.search_repos(name)
     if not repos:
-        abort(404)
+        log.info("No repositories matched name '%s'", name)
+        abort(404, "No GitHub repository found")
     repo = repos[0]
 
     # find something that looks like plugin's JS file
@@ -37,7 +39,7 @@ def plugin(name):
     plugin = {}
     for fname, url in files.iteritems():
         basename, ext = os.path.splitext(fname.lower())
-        if ext != 'js':
+        if ext != '.js':
             continue
         if basename.startswith('jquery.'):
             plugin = {
@@ -47,7 +49,9 @@ def plugin(name):
             }
             break
     else:
-        abort(404)
+        log.info("Repository %s/%s does not have anything "
+                 "that looks like jQuery plugin", repo['owner'], repo['name'])
+        abort(404, "Could not find anything that resembles jQuery plugin")
 
     # create manifest
     manifest = {
@@ -63,15 +67,16 @@ def plugin(name):
     # use date of last commit that changed the plugin file
     commits = github.get_commits(repo['owner'], repo['name'],
                                  path=plugin['filename'])
-    date = max(commits,
-               key=lambda c: parse_date(c['commit']['commiter']['date']))
+    latest_commit = max(commits,
+        key=lambda c: parse_date(c['commit']['committer']['date']))
+    date = latest_commit['commit']['committer']['date']
 
     response = {
         'manifest': manifest,
         'url': plugin['url'],
         'date': date,
     }
-    return make_response(json.dumps(response), mimetype='application/json')
+    return Response(json.dumps(response), mimetype='application/json')
 
 
 # Running the server
@@ -79,4 +84,4 @@ def plugin(name):
 def main():
     """Run the server."""
     port = 5000 if len(sys.argv) <= 1 else int(sys.argv[1])
-    app.run(port=port)
+    app.run(port=port, debug=True)
