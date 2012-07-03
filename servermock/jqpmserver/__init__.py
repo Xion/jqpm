@@ -6,6 +6,7 @@ import sys
 import json
 import os
 
+import requests
 from flask import Flask, abort, Response
 from dateutil.parser import parse as parse_date
 
@@ -21,7 +22,7 @@ def plugin(name):
     """Request handler to retrieve information of given plugin.
 
     Returned JSON contains the jquery.json manifest under "manifest" key,
-    the URL to download actual plugin JS file under "url" key
+    the base64-encoded plugin JavaScript file under "file" key,
     and the date of last modification under "date" key.
 
     .. note:: The manifest is generated on the fly
@@ -71,9 +72,13 @@ def plugin(name):
         key=lambda c: parse_date(c['commit']['committer']['date']))
     date = latest_commit['commit']['committer']['date']
 
+    # download the file
+    response = requests.get(plugin['url'])
+    plugin_file = json.loads(response.content)['content']
+
     response = {
         'manifest': manifest,
-        'url': plugin['url'],
+        'file': plugin_file,
         'date': date,
     }
     return Response(json.dumps(response), mimetype='application/json')
