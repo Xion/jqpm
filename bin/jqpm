@@ -8,6 +8,7 @@
 
 
 var util = require('util')
+  , buffer = require('buffer')
   , fs = require('fs')
   , path = require('path')
   , querystring = require('querystring')
@@ -28,9 +29,23 @@ var DATA_DIR = ".jqpm";
  * :param packages: List of package names to install
  */
 function installPackages(packages) {
+	var dataDir = getDataDirectory();
+
 	packages.forEach(function(name) {
 		downloadPackageInfo(name, function(err, info) {
-			console.log(info);
+			if (err) {
+				console.error("Could not fetch package %s: %s", name, err);
+			} else {
+				// write plugin file content
+				var jsFile = base64Decode(info.file);
+				var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
+				fs.writeFileSync(path.join(process.cwd(), jsFileName), jsFile);
+				delete info.file;
+
+				// save package information in data directory
+				var infoFilePath = path.join(dataDir, name + ".json");
+				fs.writeFileSync(infoFilePath, JSON.stringify(info));
+			}
 		});
 	});
 }
@@ -38,9 +53,10 @@ function installPackages(packages) {
 
 /* Utility functions */
 
-function ensureDataDirectoryExists() {
+function getDataDirectory() {
 	var dataDir = path.join(process.cwd(), DATA_DIR);
-	var exists = path.existsSync(dataDir);
+
+	var exists = fs.existsSync(dataDir);
 	if (exists) {
 		var isDir = fs.statSync(dataDir).isDirectory();
 		if (!isDir) {
@@ -50,6 +66,8 @@ function ensureDataDirectoryExists() {
 	} else {
 		fs.mkdirSync(dataDir);
 	}
+
+	return dataDir;
 }
 
 function downloadPackageInfo(packageName, callback) {
@@ -71,6 +89,10 @@ function downloadPackageInfo(packageName, callback) {
 
 function packageUrl(packageName) {
 	return util.format("%s/%s", REPOSITORY_URL, querystring.escape(packageName));
+}
+
+function base64Decode(data) {
+	return buffer.Buffer(data, 'base64').toString();
 }
 
 
