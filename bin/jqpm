@@ -13,6 +13,8 @@ var util = require('util')
   , path = require('path')
   , querystring = require('querystring')
   , http = require('http')
+  , https = require('https')
+  , url = require('url')
   ;
 var argparse = require('argparse')
   ;
@@ -210,14 +212,14 @@ var github = (function() {
 				options = {}; // ``options`` are optional
 			}
 
-			var args = {};
-			if (options.fromRef)
-				args.sha = options.fromRef;
+			var args = {
+				sha: (options.fromRef ? options.fromRef : 'master')
+			};
 			if (options.path)
-				args.path = path;
-			qsArgs = querystring.encode(args);
+				args.path = options.path;
+			var qsArgs = querystring.encode(args);
 
-			var url = util.format("%s/repos/%s/%s/contents/%s",
+			var url = util.format("%s/repos/%s/%s/commits",
 								  GITHUB_URL, user, repo);
 			if (qsArgs)
 				url += "?" + qsArgs;
@@ -236,7 +238,7 @@ var github = (function() {
 	var GITHUB_URL = "https://api.github.com";
 
 	return _;
-});
+})();
 
 
 /* Various utility functions */
@@ -264,24 +266,11 @@ function getDataDirectory() {
 	return dataDir;
 }
 
-function downloadPackageInfo(packageName, callback) {
-	var url = packageUrl(packageName);
-	httpGet(url, function(err, respBody) {
-		if (err) {
-			callback(err);
-		} else {
-			var packageInfo = JSON.parse(respBody);
-			callback(null, packageInfo);
-		}
-	});
-}
-
-function packageUrl(packageName) {
-	return util.format("%s/%s", REPOSITORY_URL, querystring.escape(packageName));
-}
-
-function httpGet(url, callback) {
-	var req = http.get(url, function(resp) {
+function httpGet(targetUrl, callback) {
+	if (typeof targetUrl === 'string')
+		targetUrl = url.parse(targetUrl);
+	var protocol = targetUrl.protocol === 'https:' ? https : http;
+	var req = protocol.get(targetUrl, function(resp) {
 		if (resp.statusCode >= 200 && resp.statusCode < 300) {
 			resp.setEncoding('utf8');
 
@@ -293,7 +282,7 @@ function httpGet(url, callback) {
 				callback(null, respBody);
 			});
 		} else {
-			var err = new Error("HTTP error");
+			var err = new Error(util.format("HTTP error: %s", resp.statusCode));
 			err.statusCode = resp.statusCode;
 			callback(err);
 		}
