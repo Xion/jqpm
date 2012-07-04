@@ -18,7 +18,6 @@ var argparse = require('argparse')
   ;
 
 
-var REPOSITORY_URL = "http://localhost:5000"; // using server mock
 var DATA_DIR = ".jqpm";
 
 
@@ -29,26 +28,93 @@ var DATA_DIR = ".jqpm";
  * :param packages: List of package names to install
  */
 function installPackages(packages) {
+	packages.forEach(installPackage);
+}
+
+/**
+ * Installs a single package.
+ */
+function installPackage(name) {
 	var dataDir = getDataDirectory();
 
-	packages.forEach(function(name) {
-		downloadPackageInfo(name, function(err, info) {
-			if (err) {
-				log('error', "could not fetch package %s: %s", name, err);
-			} else {
-				// write plugin file content
-				var jsFile = base64Decode(info.file);
-				var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
-				fs.writeFileSync(path.join(process.cwd(), jsFileName), jsFile);
-				delete info.file;
+	github.searchRepos(name, function(err, repos) {
+		if (err) {
+			log('error', "error while trying to search GitHub for %s: %s",
+						 name, err);
+		} else {
+			var repo = repos[0];
 
-				// save package information in data directory
-				var infoFilePath = path.join(dataDir, name + ".json");
-				fs.writeFileSync(infoFilePath, JSON.stringify(info));
+			// find something that looks like plugin's JS file
+			github.listFiles(repo.owner, repo.name, function(err, files) {
+				if (err) {
+					log('error', "error while fetching list of files from %s/%s: %s",
+								 repo.owner, repo.name, err);
+				} else {
+					var plugin;
+					for (var fname in files) {
+						if (!files.hasOwnProperty(fname))
+							continue;
+						var match = fname.toLowerCase().match(/^jquery\.(.*)\.js$/)
+						if (match) {
+							plugin = {
+								name: match[1],
+								filename: fname,
+								url: files[fname],
+							};
+							break;
+						}
+					}
+					if (!plugin) {
+						log('error', "repository %s/%s does not have anything " +
+									 "that looks like a jQuery plugin",
+									 repo.owner, repo.name);
+					} else {
+						// create manifest
+						var manifest = {
+							name: plugin.name,
+							title: repo.name,
+							author: {
+								name: repo.owner,
+								url: "http://github.com/" + repo.owner,
+							},
+							homepage: util.format("http://github.com/%s/%s",
+												  repo.owner, repo.name),
+						};
 
-				log('info', "%s installed", name);
-			}
-		});
+						// use date of last commit that changed the plugin file
+						github.getCommits(repo.owner, repo.name,
+										  {path: plugin.filename}, function(err, commits) {
+							if (err) {
+								log('error', "could not retrieve commits for %s/%s: %s",
+											 repo.owner, repo.name, err);
+							} else {
+								var date = commits[0].commit.committer.date;
+
+								// download the file
+								httpGet(plugin.url, function(err, respBody) {
+									var resp = JSON.parse(respBody);
+									var pluginFile = base64Decode(resp.content);
+									var pluginFileName = util.format(
+										"jquery.%s.js", name.toLowerCase());
+									fs.writeFileSync(
+										path.join(process.cwd(), pluginFileName),
+										pluginFile);
+
+									// save package information in data directory
+									var infoFilePath = path.join(dataDir, name + ".json");
+									fs.writeFileSync(infoFilePath, JSON.stringify({
+										manifest: manifest,
+										date: date,
+									}));
+
+									log('info', "%s installed successfully", name);
+								});
+							}
+						});
+					}
+				}
+			});
+		}
 	});
 }
 
