@@ -103,7 +103,7 @@ function installPackage(name) {
 
 			// save package information in data directory
 			var infoFilePath = path.join(dataDir, name + ".json");
-			fs.writeFileSync(infoFilePath, JSON.stringify({
+			fs.writeFileSync(infoFilePath, prettyJSON({
 				manifest: manifest,
 				date: date,
 			}));
@@ -305,6 +305,10 @@ function httpGet(targetUrl, callback) {
 
 function base64Decode(data) {
 	return buffer.Buffer(data, 'base64').toString();
+}
+
+function prettyJSON(object) {
+	return JSON.stringify(object, undefined, 4);
 }
 
 
