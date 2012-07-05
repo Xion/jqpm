@@ -134,22 +134,30 @@ function uninstallPackage(name) {
 	var dataDir = getDataDirectory();
 
 	var infoFilePath = path.join(dataDir, name + ".json");
-	if (fs.existsSync(infoFilePath)) {
-		var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
-		var jsFilePath = path.join(process.cwd(), jsFileName);
-		if (fs.existsSync(jsFilePath)) {
-			fs.unlinkSync(jsFilePath);
-			fs.unlinkSync(infoFilePath);
-			log('info', "%s uninstalled", name);
-		} else {
-			log('warn', "%s not found -- removing from installed plugins",
+	fs.exists(infoFilePath, function(itDoes) {
+		if (itDoes) {
+			var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
+			var jsFilePath = path.join(process.cwd(), jsFileName);
+			fs.exists(jsFilePath, function(itDoes) {
+				if (itDoes) {
+					async.map([jsFilePath, infoFilePath], fs.unlink, function(err) {
+						if (err) {
+							log('error', "error while trying to remove %s: %s",
+								name, err);
+						} else {
+							log('info', "%s uninstalled", name);
+						}
+					});
+				} else {
+					log('warn', "%s not found -- removing from installed plugins",
 						jsFileName);
-			fs.unlinkSync(infoFilePath);
+					fs.unlink(infoFilePath);
+				}
+			});
+		} else {
+			log('warn', "%s not installed -- skipping", name);
 		}
-
-	} else {
-		log('warn', "%s not installed -- skipping", name);
-	}
+	});
 }
 
 
@@ -313,8 +321,8 @@ function main(args) {
 				return installPackages(args.package);
 			case 'uninstall':
 				return uninstallPackages(args.package);
-		}
-	} catch (e) {
+		
+}	} catch (e) {
 		log('error', e.message);
 	}
 }
@@ -330,14 +338,16 @@ function argumentParser() {
 	});
 	var subparsers = parser.addSubparsers({dest: "command"});
 
-	var installParser = subparsers.addParser('install', {addHelp: true});
+	var installParser = subparsers.addParser('install');
 	installParser.addArgument(['package'], {
+		nargs: '+',
 		action: 'append',
 		help: "Package(s) to install"
 	});
 
-	var uninstallParser = subparsers.addParser('uninstall', {addHelp: true});
+	var uninstallParser = subparsers.addParser('uninstall');
 	uninstallParser.addArgument(['package'], {
+		nargs: '+',
 		action: 'append',
 		help: "Package(s) to uninstall"
 	});
