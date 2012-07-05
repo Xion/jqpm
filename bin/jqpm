@@ -16,7 +16,8 @@ var util = require('util')
   , https = require('https')
   , url = require('url')
   ;
-var argparse = require('argparse')
+var async = require('async')
+  , argparse = require('argparse')
   ;
 
 
@@ -30,7 +31,7 @@ var DATA_DIR = ".jqpm";
  * :param packages: List of package names to install
  */
 function installPackages(packages) {
-	packages.forEach(installPackage);
+	async.forEach(packages, installPackage);
 }
 
 /**
@@ -39,83 +40,81 @@ function installPackages(packages) {
 function installPackage(name) {
 	var dataDir = getDataDirectory();
 
-	github.searchRepos(name, function(err, repos) {
-		if (err) {
-			log('error', "error while trying to search GitHub for %s: %s",
-						 name, err);
-		} else {
-			var repo = repos[0];
+	var repo, plugin;
+	var manifest;
+	var date;
 
-			// find something that looks like plugin's JS file
-			github.listFiles(repo.owner, repo.name, function(err, files) {
-				if (err) {
-					log('error', "error while fetching list of files from %s/%s: %s",
-								 repo.owner, repo.name, err);
-				} else {
-					var plugin;
-					for (var fname in files) {
-						if (!files.hasOwnProperty(fname))
-							continue;
-						var match = fname.toLowerCase().match(/^jquery\.(.*)\.js$/)
-						if (match) {
-							plugin = {
-								name: match[1],
-								filename: fname,
-								url: files[fname],
-							};
-							break;
-						}
-					}
-					if (!plugin) {
-						log('error', "repository %s/%s does not have anything " +
-									 "that looks like a jQuery plugin",
-									 repo.owner, repo.name);
-					} else {
-						// create manifest
-						var manifest = {
-							name: plugin.name,
-							title: repo.name,
-							author: {
-								name: repo.owner,
-								url: "http://github.com/" + repo.owner,
-							},
-							homepage: util.format("http://github.com/%s/%s",
-												  repo.owner, repo.name),
-						};
+	async.waterfall([
+		function(next) {
+			github.searchRepos(name, next);
+		},
+		function(repos, next) {
+			repo = repos[0];
 
-						// use date of last commit that changed the plugin file
-						github.getCommits(repo.owner, repo.name,
-										  {path: plugin.filename}, function(err, commits) {
-							if (err) {
-								log('error', "could not retrieve commits for %s/%s: %s",
-											 repo.owner, repo.name, err);
-							} else {
-								var date = commits[0].commit.committer.date;
-
-								// download the file
-								httpGet(plugin.url, function(err, respBody) {
-									var resp = JSON.parse(respBody);
-									var pluginFile = base64Decode(resp.content);
-									var pluginFileName = util.format(
-										"jquery.%s.js", name.toLowerCase());
-									fs.writeFileSync(
-										path.join(process.cwd(), pluginFileName),
-										pluginFile);
-
-									// save package information in data directory
-									var infoFilePath = path.join(dataDir, name + ".json");
-									fs.writeFileSync(infoFilePath, JSON.stringify({
-										manifest: manifest,
-										date: date,
-									}));
-
-									log('info', "%s installed successfully", name);
-								});
-							}
-						});
-					}
+			// look for something that looks like plugin's JS file
+			github.listFiles(repo.owner, repo.name, next);
+		},
+		function(files, next) {
+			for (var fname in files) {
+				if (!files.hasOwnProperty(fname))
+					continue;
+				var match = fname.toLowerCase().match(/^jquery\.(.*)\.js$/)
+				if (match) {
+					plugin = {
+						name: match[1],
+						filename: fname,
+						url: files[fname],
+					};
+					break;
 				}
-			});
+			}
+			if (!plugin) {
+				next(new Error(util.format(
+					"repository %s/%s does not have anything " +
+					"that looks like a jQuery plugin",
+					repo.owner, repo.name)));
+			} else {
+				// create manifest
+				manifest = {
+					name: plugin.name,
+					title: repo.name,
+					author: {
+						name: repo.owner,
+						url: "http://github.com/" + repo.owner,
+					},
+					homepage: util.format("http://github.com/%s/%s",
+										  repo.owner, repo.name),
+				};
+
+				// use date of last commit that changed the plugin file
+				github.getCommits(repo.owner, repo.name, {path: plugin.filename}, next);
+			}
+		},
+		function(commits, next) {
+			date = commits[0].commit.committer.date;
+			httpGet(plugin.url, next);
+		},
+		function(respBody, next) {
+			var resp = JSON.parse(respBody);
+
+			var pluginFile = base64Decode(resp.content);
+			var pluginFileName = util.format("jquery.%s.js", name.toLowerCase());
+			fs.writeFileSync(path.join(process.cwd(), pluginFileName), pluginFile);
+
+			// save package information in data directory
+			var infoFilePath = path.join(dataDir, name + ".json");
+			fs.writeFileSync(infoFilePath, JSON.stringify({
+				manifest: manifest,
+				date: date,
+			}));
+
+			next();
+		},
+	], function(err) {
+		if (err) {
+			log('error', "failed to install %s: %s", name, err);
+		} else {
+			log('info', "%s installed successfully", name);
 		}
 	});
 }
@@ -125,28 +124,34 @@ function installPackage(name) {
  * :param packages: List of packages to uninstall
  */
 function uninstallPackages(packages) {
+	async.forEach(packages, uninstallPackage);
+}
+
+/**
+ * Uninstalls a single package.
+ */
+function uninstallPackage(name) {
 	var dataDir = getDataDirectory();
 
-	packages.forEach(function(name) {
-		var infoFilePath = path.join(dataDir, name + ".json");
-		if (fs.existsSync(infoFilePath)) {
-			var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
-			var jsFilePath = path.join(process.cwd(), jsFileName);
-			if (fs.existsSync(jsFilePath)) {
-				fs.unlinkSync(jsFilePath);
-				fs.unlinkSync(infoFilePath);
-				log('info', "%s uninstalled", name);
-			} else {
-				log('warn', "%s not found -- removing from installed plugins",
-							jsFileName);
-				fs.unlinkSync(infoFilePath);
-			}
-
+	var infoFilePath = path.join(dataDir, name + ".json");
+	if (fs.existsSync(infoFilePath)) {
+		var jsFileName = util.format("jquery.%s.js", name.toLowerCase());
+		var jsFilePath = path.join(process.cwd(), jsFileName);
+		if (fs.existsSync(jsFilePath)) {
+			fs.unlinkSync(jsFilePath);
+			fs.unlinkSync(infoFilePath);
+			log('info', "%s uninstalled", name);
 		} else {
-			log('warn', "%s not installed -- skipping", name);
+			log('warn', "%s not found -- removing from installed plugins",
+						jsFileName);
+			fs.unlinkSync(infoFilePath);
 		}
-	});
+
+	} else {
+		log('warn', "%s not installed -- skipping", name);
+	}
 }
+
 
 /* GitHub API calls */
 
