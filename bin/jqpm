@@ -38,7 +38,8 @@ function installPackages(packages) {
 			}
 		};
 
-		github.searchRepos(name, function(err, repos) {
+		var query = name + " jquery language:JavaScript";
+		github.searchRepos(query, function(err, repos) {
 			if (err) {
 				installCallback(err);
 			} else {
@@ -115,10 +116,12 @@ function retrievePackage(name, repo, options, callback) {
 			for (var fname in files) {
 				if (!files.hasOwnProperty(fname))
 					continue;
-				var match = fname.toLowerCase().match(/^jquery\.(.*)\.js$/)
+				var match = fname.toLowerCase().match(
+					/^(jquery\.)?(.*)(\.min)?\.js$/i
+				);
 				if (match) {
 					plugin = {
-						name: match[1],
+						name: match[2],
 						filename: fname,
 						url: files[fname],
 					};
@@ -301,7 +304,7 @@ function main(args) {
 				return uninstallPackages(args.package);
 		
 }	} catch (e) {
-		log('error', e.message);
+		log('error', e);
 	}
 }
 
