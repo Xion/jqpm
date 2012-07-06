@@ -31,30 +31,61 @@ var DATA_DIR = ".jqpm";
  * :param packages: List of package names to install
  */
 function installPackages(packages) {
-	async.forEach(packages, installPackage);
+	async.forEach(packages, function(name) {
+		var installCallback = function(err) {
+			if (err) {
+				log('error', "failed to install %s: %s", name, err);
+			} else {
+				log('info', "%s installed successfully", name);
+			}
+		};
+
+		github.searchRepos(name, function(err, repos) {
+			if (err) {
+				installCallback(err);
+			} else {
+				if (repos.length > 0) {
+					retrievePackage(name, repos[0], {force: true}, installCallback);
+				} else {
+					log('info', "%s not found", name);
+				}
+			}
+		});
+	});
 }
 
-/**
- * Installs a single package.
- */
-function installPackage(name) {
-	var dataDir = getDataDirectory();
 
-	var repo, plugin;
-	var manifest;
-	var date;
+/**
+ * Retrieves a package of given name from given GitHub reository.
+ * :param name: Name of the package
+ * :param repo: Repository, object with ``owner`` and ``name`` attributes
+ *              or a string "owner/name"
+ * :param options: Possible options include: 
+ 				   ``force`` - true if package should be always replaced
+ */
+function retrievePackage(name, repo, options, callback) {
+	if (!callback) {
+		callback = options;
+		options = {force: false};
+	}
+	if (typeof(repo) === 'string') {
+		repo = repo.split('/');
+		repo = {owner: repo[0], name: repo[1]};
+	}
+
+	var plugin, manifest;
+	var repoDate, currentDate;
+
+	var dataDir = getDataDirectory();
+	var jsFilePath = util.format("jquery.%s.js", name.toLowerCase());
+	var infoFilePath = path.join(dataDir, name + ".json");
 
 	async.waterfall([
 		function(next) {
-			github.searchRepos(name, next);
-		},
-		function(repos, next) {
-			repo = repos[0];
-
-			// look for something that looks like plugin's JS file
 			github.listFiles(repo.owner, repo.name, next);
 		},
 		function(files, next) {
+			// look for something that looks like plugin's JS file
 			for (var fname in files) {
 				if (!files.hasOwnProperty(fname))
 					continue;
@@ -68,13 +99,8 @@ function installPackage(name) {
 					break;
 				}
 			}
-			if (!plugin) {
-				next(new Error(util.format(
-					"repository %s/%s does not have anything " +
-					"that looks like a jQuery plugin",
-					repo.owner, repo.name)));
-			} else {
-				// create manifest
+
+			if (plugin) {
 				manifest = {
 					name: plugin.name,
 					title: repo.name,
@@ -86,38 +112,77 @@ function installPackage(name) {
 										  repo.owner, repo.name),
 				};
 
-				// use date of last commit that changed the plugin file
-				github.getCommits(repo.owner, repo.name, {path: plugin.filename}, next);
+				// retrieve latest commit touching plugin file
+				// and the date of in our registry (if any) for comparison
+				async.parallel([
+					function(next) {
+						github.getCommits(repo.owner, repo.name,
+										 {path: plugin.filename},
+							function(err, commits) {
+								if (err) {
+									next(err);
+								} else {
+									var repoDate = new Date(commits[0].commit.committer.date);
+									next(null, repoDate);
+								}
+							});		
+					},
+					function(next) {
+						infoFilePath = path.join(dataDir, name + ".json");
+						fs.exists(infoFilePath, function(itDoes) {
+							if (itDoes) {
+								fs.readFile(infoFilePath, function(err, data) {
+									var packageInfo = JSON.parse(data);
+									var currentDate = new Date(packageInfo.date);
+									next(null, currentDate);
+								});
+							} else {
+								next(null, null);
+							}
+						});
+					}
+				], next);
+				
+			} else {
+				next(new Error(util.format(
+					"repository %s/%s does not have anything " +
+					"that looks like a jQuery plugin",
+					repo.owner, repo.name)));
 			}
 		},
-		function(commits, next) {
-			date = commits[0].commit.committer.date;
-			httpGet(plugin.url, next);
+		function(dates, next) {
+			repoDate = dates[0]; currentDate = dates[1];
+			var hasUpdate = repoDate - currentDate > 0;
+			if (hasUpdate || options.force) {
+				httpGet(plugin.url, next);
+			} else {
+				log('info', "%s is already up to date", name);
+			}
 		},
 		function(respBody, next) {
 			var resp = JSON.parse(respBody);
+			var jsFile = base64Decode(resp.content);
 
-			var pluginFile = base64Decode(resp.content);
-			var pluginFileName = util.format("jquery.%s.js", name.toLowerCase());
-			fs.writeFileSync(path.join(process.cwd(), pluginFileName), pluginFile);
-
-			// save package information in data directory
-			var infoFilePath = path.join(dataDir, name + ".json");
-			fs.writeFileSync(infoFilePath, prettyJSON({
-				manifest: manifest,
-				date: date,
-			}));
-
-			next();
+			// write plugin JS file and package information
+			async.parallel([
+				function(next) {
+					fs.writeFile(jsFilePath, jsFile, next);
+				},
+				function(next) {
+					var info = prettyJSON({
+						manifest: manifest,
+						date: repoDate.toISOString(),
+					});
+					fs.writeFile(infoFilePath, info, next);
+				}
+			],
+			function(err) {
+				next();
+			});
 		},
-	], function(err) {
-		if (err) {
-			log('error', "failed to install %s: %s", name, err);
-		} else {
-			log('info', "%s installed successfully", name);
-		}
-	});
+	], callback);
 }
+
 
 /**
  * Uninstalls given list of packages.
