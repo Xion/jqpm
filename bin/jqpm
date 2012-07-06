@@ -54,9 +54,37 @@ function installPackages(packages) {
 	});
 }
 
+/**
+ * Updates all packages to current versions.
+ */
+function updatePackages() {
+	var dataDir = getDataDirectory();
+
+	fs.readdir(dataDir, function(err, files) {
+		files.forEach(function(file) {
+			var name = path.basename(file, '.json');
+
+			var infoFilePath = path.join(dataDir, file);
+			fs.readFile(infoFilePath, 'utf8', function(err, data) {
+				if (err) {
+					log('error', "could not access data for %s -- skipping", name);
+				} else {
+					var info = JSON.parse(data);
+					retrievePackage(name, info.repo, function(err, result) {
+						if (err) {
+							log('error', "failed to update %s", name);
+						} else if (result.retrieved) {
+							log('info', "%s updated successfully", name);
+						}
+					});
+				}
+			});
+		})
+	});
+}
 
 /**
- * Retrieves a package of given name from given GitHub reository.
+ * Retrieves a package of given name from given GitHub repository.
  * :param name: Name of the package
  * :param repo: Repository, object with ``owner`` and ``name`` attributes
  *              or a string "owner/name"
@@ -131,7 +159,7 @@ function retrievePackage(name, repo, options, callback) {
 						infoFilePath = path.join(dataDir, name + ".json");
 						fs.exists(infoFilePath, function(itDoes) {
 							if (itDoes) {
-								fs.readFile(infoFilePath, function(err, data) {
+								fs.readFile(infoFilePath, 'utf8', function(err, data) {
 									var packageInfo = JSON.parse(data);
 									var currentDate = new Date(packageInfo.date);
 									next(null, currentDate);
@@ -156,7 +184,8 @@ function retrievePackage(name, repo, options, callback) {
 			if (hasUpdate || options.force) {
 				httpGet(plugin.url, next);
 			} else {
-				log('info', "%s is already up to date", name);
+				// already up to date and no forced update
+				callback(null, {retrieved: false});
 			}
 		},
 		function(respBody, next) {
@@ -171,13 +200,17 @@ function retrievePackage(name, repo, options, callback) {
 				function(next) {
 					var info = prettyJSON({
 						manifest: manifest,
+						repo: {
+							owner: repo.owner,
+							name: repo.name
+						},
 						date: repoDate.toISOString(),
 					});
 					fs.writeFile(infoFilePath, info, next);
 				}
 			],
 			function(err) {
-				next();
+				next(null, {retrieved: true});
 			});
 		},
 	], callback);
@@ -388,6 +421,8 @@ function main(args) {
 		switch(args.command) {
 			case 'install':
 				return installPackages(args.package);
+			case 'update':
+				return updatePackages();
 			case 'uninstall':
 				return uninstallPackages(args.package);
 		
@@ -413,6 +448,9 @@ function argumentParser() {
 		action: 'append',
 		help: "Package(s) to install"
 	});
+
+	var updateParser = subparsers.addParser('update');
+	// (no arguments)
 
 	var uninstallParser = subparsers.addParser('uninstall');
 	uninstallParser.addArgument(['package'], {
